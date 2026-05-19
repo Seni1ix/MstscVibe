@@ -8,6 +8,8 @@ public class SessionForm : Form {
     private const int MF_STRING = 0x0;
     private const int SC_FULLSCREEN = 0xF100;
     private const int SC_DISCONNECT = 0xF101;
+    private const int SC_MINIMIZE_WIN = 0xF020;
+    private const int SC_RESTORE_WIN = 0xF120;
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
@@ -15,6 +17,8 @@ public class SessionForm : Form {
     private static extern bool AppendMenu(IntPtr hMenu, int uFlags, int uIDNewItem, string lpNewItem);
     [DllImport("user32.dll")]
     private static extern bool InsertMenu(IntPtr hMenu, int uPosition, int uFlags, int uIDNewItem, string lpNewItem);
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
     private readonly RdpClientHost _rdpClient;
     private readonly RdpFile _rdpFile;
     private readonly System.Windows.Forms.Timer _disconnectTimer;
@@ -33,6 +37,13 @@ public class SessionForm : Form {
 
         _rdpClient = new RdpClientHost { Dock = DockStyle.Fill };
         Controls.Add(_rdpClient);
+
+        _rdpClient.RequestMinimize += (s, e) => {
+            if (_isFullScreen) WindowState = FormWindowState.Minimized;
+        };
+        _rdpClient.RequestLeaveFullScreen += (s, e) => {
+            if (_isFullScreen) ExitFullScreen();
+        };
 
         if (rdpFile.ScreenModeId == 2) {
             EnterFullScreen();
@@ -70,6 +81,14 @@ public class SessionForm : Form {
             }
             if (cmd == SC_DISCONNECT) {
                 Close();
+                return;
+            }
+            if (cmd == SC_MINIMIZE_WIN && _isFullScreen) {
+                WindowState = FormWindowState.Minimized;
+                return;
+            }
+            if (cmd == SC_RESTORE_WIN && _isFullScreen) {
+                ExitFullScreen();
                 return;
             }
         }
@@ -169,6 +188,7 @@ public class SessionForm : Form {
             adv.ConnectionBarShowRestoreButton = true;
             adv.ConnectionBarShowPinButton = true;
             adv.PinConnectionBar = false;
+            adv.ContainerHandledFullScreen = 1;
         }
     }
 
@@ -196,6 +216,12 @@ public class SessionForm : Form {
 
     protected override void OnClientSizeChanged(EventArgs e) {
         base.OnClientSizeChanged(e);
+
+        // Re-enter fullscreen when restored from minimized
+        if (_isFullScreen && WindowState == FormWindowState.Maximized && _rdpClient.Connected != 0 && !_rdpClient.FullScreen) {
+            _rdpClient.FullScreen = true;
+        }
+
         // Debounce: restart timer on every size change, only fire once settled
         if (_rdpClient.Connected != 0) {
             _resizeTimer.Stop();
