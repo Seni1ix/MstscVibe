@@ -41,6 +41,24 @@ public class RdpClientHost : AxHost {
     public void Connect() => Ocx?.Connect();
     public void Disconnect() => Ocx?.Disconnect();
 
+    public void SendScanCode(uint scanCode, bool keyUp) {
+        var ocx = GetOcx();
+        if (ocx == null) return;
+        var nonScriptable = (IMsRdpClientNonScriptable)ocx;
+        if(nonScriptable == null) 
+            return;
+        nonScriptable.SendKeys(1, new bool[] { keyUp }, new int[] { (int)scanCode });
+    }
+
+    public void SendKeys(int numKeys, bool[] keyUp, int[] scanCodes) {
+        var ocx = GetOcx();
+        if (ocx == null) return;
+        var nonScriptable = (IMsRdpClientNonScriptable)ocx;
+        if(nonScriptable == null) 
+            return;
+        nonScriptable.SendKeys(numKeys, keyUp, scanCodes);
+    }
+
     public void Reconnect(int width, int height) {
         try {
             Ocx?.UpdateSessionDisplaySettings((uint)width, (uint)height, (uint)width, (uint)height, 0u, 100u, 100u);
@@ -149,5 +167,23 @@ public class RdpClientHost : AxHost {
         public void OnDevicesButtonPressed() { }
         public void OnAutoReconnected() { }
         public void OnAutoReconnecting2(int disconnectReason, bool networkAvailable, int attemptCount, int maxAttemptCount) { }
+    }
+
+    [ComImport, Guid("2F079C4C-87B2-4AFD-97AB-20CDB43038AE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IMsRdpClientNonScriptable {
+        // IMsTscNonScriptable methods
+        void put_ClearTextPassword([MarshalAs(UnmanagedType.BStr)] string clearTextPassword);
+        void put_PortablePassword([MarshalAs(UnmanagedType.BStr)] string portablePassword);
+        void get_PortablePassword([MarshalAs(UnmanagedType.BStr)] out string portablePassword);
+        void put_PortableSalt([MarshalAs(UnmanagedType.BStr)] string portableSalt);
+        void get_PortableSalt([MarshalAs(UnmanagedType.BStr)] out string portableSalt);
+        void put_BinaryPassword([MarshalAs(UnmanagedType.BStr)] string binaryPassword);
+        void get_BinaryPassword([MarshalAs(UnmanagedType.BStr)] out string binaryPassword);
+        void put_BinarySalt([MarshalAs(UnmanagedType.BStr)] string binarySalt);
+        void get_BinarySalt([MarshalAs(UnmanagedType.BStr)] out string binarySalt);
+        void ResetPassword();
+        // IMsRdpClientNonScriptable methods
+        void NotifyRedirectDeviceChange(IntPtr wParam, IntPtr lParam);
+        void SendKeys(int numKeys, [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.VariantBool)] bool[] pbArrayKeyUp, [MarshalAs(UnmanagedType.LPArray)] int[] plKeyData);
     }
 }

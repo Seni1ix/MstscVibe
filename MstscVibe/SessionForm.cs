@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security;
 
 namespace MstscVibe;
 
@@ -7,9 +8,15 @@ public class SessionForm : Form {
     private const int MF_SEPARATOR = 0x800;
     private const int MF_STRING = 0x0;
     private const int SC_FULLSCREEN = 0xF100;
-    private const int SC_DISCONNECT = 0xF101;
+    private const int SC_DISCONNECT = 0xF110;
+    private const int SC_TYPE_PASSWORD = 0xF130;
     private const int SC_MINIMIZE_WIN = 0xF020;
     private const int SC_RESTORE_WIN = 0xF120;
+
+    [DllImport("user32.dll")]
+    private static extern short VkKeyScanW(char ch);
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
@@ -23,6 +30,7 @@ public class SessionForm : Form {
     private readonly RdpFile _rdpFile;
     private readonly System.Windows.Forms.Timer _disconnectTimer;
     private readonly System.Windows.Forms.Timer _resizeTimer;
+    private readonly SecureString? _securePassword;
     private Size _lastClientSize;
     private bool _isFullScreen;
     private FormBorderStyle _savedBorderStyle;
@@ -44,6 +52,13 @@ public class SessionForm : Form {
         _rdpClient.RequestLeaveFullScreen += (s, e) => {
             if (_isFullScreen) ExitFullScreen();
         };
+
+        if (!string.IsNullOrEmpty(rdpFile.Password)) {
+            _securePassword = new SecureString();
+            foreach (var c in rdpFile.Password)
+                _securePassword.AppendChar(c);
+            _securePassword.MakeReadOnly();
+        }
 
         if (rdpFile.ScreenModeId == 2) {
             EnterFullScreen();
@@ -69,6 +84,7 @@ public class SessionForm : Form {
         var sysMenu = GetSystemMenu(Handle, false);
         AppendMenu(sysMenu, MF_SEPARATOR, 0, string.Empty);
         AppendMenu(sysMenu, MF_STRING, SC_FULLSCREEN, "Full Screen\tCtrl+Alt+Break");
+        AppendMenu(sysMenu, MF_STRING, SC_TYPE_PASSWORD, "Type Password");
         AppendMenu(sysMenu, MF_STRING, SC_DISCONNECT, "Disconnect");
     }
 
@@ -77,6 +93,10 @@ public class SessionForm : Form {
             int cmd = (int)(m.WParam.ToInt64() & 0xFFF0);
             if (cmd == SC_FULLSCREEN) {
                 if (_isFullScreen) ExitFullScreen(); else EnterFullScreen();
+                return;
+            }
+            if (cmd == SC_TYPE_PASSWORD) {
+                TypePasswordIntoSession();
                 return;
             }
             if (cmd == SC_DISCONNECT) {
@@ -290,9 +310,55 @@ public class SessionForm : Form {
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
+    private void TypePasswordIntoSession() {
+        if (_securePassword == null || _securePassword.Length == 0) {
+            MessageBox.Show("No password stored for this session.", "Type Password",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (_rdpClient.Connected == 0) return;
+
+        var ptr = Marshal.SecureStringToGlobalAllocUnicode(_securePassword);
+        try {
+            var password = Marshal.PtrToStringUni(ptr) ?? string.Empty;
+            var keyUpList = new List<bool>();
+            var scanCodeList = new List<int>();
+
+            foreach (char c in password) {
+                short vk = VkKeyScanW(c);
+                if (vk == -1) continue;
+                byte virtualKey = (byte)(vk & 0xFF);
+                byte shiftState = (byte)((vk >> 8) & 0xFF);
+                uint scanCode = MapVirtualKeyW(virtualKey, 0);
+
+                bool needShift = (shiftState & 1) != 0;
+                bool needCtrl = (shiftState & 2) != 0;
+                bool needAlt = (shiftState & 4) != 0;
+
+                if (needShift) { keyUpList.Add(false); scanCodeList.Add(0x2A); }
+                if (needCtrl) { keyUpList.Add(false); scanCodeList.Add(0x1D); }
+                if (needAlt) { keyUpList.Add(false); scanCodeList.Add(0x38); }
+
+                keyUpList.Add(false); scanCodeList.Add((int)scanCode);
+                keyUpList.Add(true); scanCodeList.Add((int)scanCode);
+
+                if (needAlt) { keyUpList.Add(true); scanCodeList.Add(0x38); }
+                if (needCtrl) { keyUpList.Add(true); scanCodeList.Add(0x1D); }
+                if (needShift) { keyUpList.Add(true); scanCodeList.Add(0x2A); }
+            }
+
+            if (keyUpList.Count > 0) {
+                _rdpClient.SendKeys(keyUpList.Count, keyUpList.ToArray(), scanCodeList.ToArray());
+            }
+        } finally {
+            Marshal.ZeroFreeGlobalAllocUnicode(ptr);
+        }
+    }
+
     private void SessionForm_FormClosing(object? sender, FormClosingEventArgs e) {
         _resizeTimer.Stop();
         _disconnectTimer.Stop();
+        _securePassword?.Dispose();
         try {
             if (_rdpClient.Connected != 0)
                 _rdpClient.Disconnect();
