@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace MstscVibe;
 
 public class OptionsForm : Form {
@@ -16,6 +18,11 @@ public class OptionsForm : Form {
     private readonly Label lblAudio;
     private readonly ComboBox cmbAudio;
 
+    private readonly GroupBox grpScreenshot;
+    private readonly Label lblScreenshotPath;
+    private readonly TextBox txtScreenshotPath;
+    private readonly Button btnBrowseScreenshots;
+
     private readonly Button btnOk;
     private readonly Button btnCancel;
 
@@ -27,6 +34,7 @@ public class OptionsForm : Form {
     public bool RedirectDrives { get; private set; }
     public bool RedirectSmartCards { get; private set; }
     public int AudioMode { get; private set; }
+    public string ScreenshotPath { get; private set; } = "";
 
     public OptionsForm(RdpFile rdp) {
         Text = "Options";
@@ -34,7 +42,7 @@ public class OptionsForm : Form {
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(380, 310);
+        ClientSize = new Size(380, 460);
         ShowInTaskbar = false;
 
         // --- Display group ---
@@ -98,14 +106,49 @@ public class OptionsForm : Form {
         };
         grpRedirection.Controls.AddRange([chkClipboard, chkPrinters, chkDrives, chkSmartCards, lblAudio, cmbAudio]);
 
+        // --- Screenshot group ---
+        lblScreenshotPath = new Label { Text = "Save location:", Location = new Point(16, 25), AutoSize = true };
+        txtScreenshotPath = new TextBox {
+            Location = new Point(16, 50),
+            Size = new Size(268, 23),
+            Text = UserSettings.Load().ScreenshotPath,
+            ReadOnly = false
+        };
+        btnBrowseScreenshots = new Button {
+            Text = "Browse...",
+            Location = new Point(290, 50),
+            Size = new Size(66, 23)
+        };
+        btnBrowseScreenshots.Click += BtnBrowseScreenshots_Click;
+
+        grpScreenshot = new GroupBox {
+            Text = "Screenshots",
+            Location = new Point(12, 265),
+            Size = new Size(356, 90)
+        };
+        grpScreenshot.Controls.AddRange([lblScreenshotPath, txtScreenshotPath, btnBrowseScreenshots]);
+
         // --- Buttons ---
-        btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(200, 268), Size = new Size(80, 30) };
-        btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(288, 268), Size = new Size(80, 30) };
+        btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(200, 368), Size = new Size(80, 30) };
+        btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(288, 368), Size = new Size(80, 30) };
         btnOk.Click += BtnOk_Click;
 
         AcceptButton = btnOk;
         CancelButton = btnCancel;
-        Controls.AddRange([grpDisplay, grpRedirection, btnOk, btnCancel]);
+        Controls.AddRange([grpDisplay, grpRedirection, grpScreenshot, btnOk, btnCancel]);
+
+        Text = $"MstscVibe - Options - {Assembly.GetExecutingAssembly().GetName().Version}";
+    }
+
+    private void BtnBrowseScreenshots_Click(object? sender, EventArgs e) {
+        using (var folderDialog = new FolderBrowserDialog {
+            Description = "Select folder for saving screenshots",
+            SelectedPath = txtScreenshotPath.Text
+        }) {
+            if (folderDialog.ShowDialog() == DialogResult.OK) {
+                txtScreenshotPath.Text = folderDialog.SelectedPath;
+            }
+        }
     }
 
     private void BtnOk_Click(object? sender, EventArgs e) {
@@ -117,6 +160,7 @@ public class OptionsForm : Form {
         RedirectDrives = chkDrives.Checked;
         RedirectSmartCards = chkSmartCards.Checked;
         AudioMode = cmbAudio.SelectedIndex;
+        ScreenshotPath = txtScreenshotPath.Text;
     }
 
     private static readonly string[] Resolutions = [

@@ -9,7 +9,8 @@ namespace MstscVibe {
 			InitializeComponent();
 			_settings = UserSettings.Load();
 			ApplySettings();
-		}
+            Text = $"MstscVibe - {Assembly.GetExecutingAssembly().GetName().Version}";
+        }
 
 		public Form1(RdpFile rdpFile) : this() {
 			_loadedRdp = rdpFile;

@@ -1,10 +1,12 @@
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Diagnostics;
 
 namespace MstscVibe;
 
 public class SessionForm : Form {
     private const int WM_SYSCOMMAND = 0x0112;
+    private const int WM_KEYDOWN = 0x0100;
     private const int MF_SEPARATOR = 0x800;
     private const int MF_STRING = 0x0;
     private const int SC_FULLSCREEN = 0xF100;
@@ -12,6 +14,8 @@ public class SessionForm : Form {
     private const int SC_TYPE_PASSWORD = 0xF130;
     private const int SC_MINIMIZE_WIN = 0xF020;
     private const int SC_RESTORE_WIN = 0xF120;
+    private const int SC_TAKE_SCREENSHOT = 0xF131;
+    private const int VK_P = 0x50;
 
     [DllImport("user32.dll")]
     private static extern short VkKeyScanW(char ch);
@@ -26,6 +30,24 @@ public class SessionForm : Form {
     private static extern bool InsertMenu(IntPtr hMenu, int uPosition, int uFlags, int uIDNewItem, string lpNewItem);
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern short GetKeyState(int nVirtKey);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+    private IntPtr _keyboardHookId = IntPtr.Zero;
+    private LowLevelKeyboardProc? _keyboardProc;
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN_HOOK = 0x0100;
     private readonly RdpClientHost _rdpClient;
     private readonly RdpFile _rdpFile;
     private readonly System.Windows.Forms.Timer _disconnectTimer;
@@ -41,8 +63,9 @@ public class SessionForm : Form {
 
     public SessionForm(RdpFile rdpFile) {
         _rdpFile = rdpFile;
+        string filename = Path.GetFileNameWithoutExtension(_rdpFile.FileName);
 
-        Text = $"MstscVibe - {rdpFile.FileName} - {rdpFile.FullAddress}";
+        Text = $"MstscVibe - {filename} - {rdpFile.FullAddress}";
         StartPosition = FormStartPosition.CenterScreen;
 
         _rdpClient = new RdpClientHost { Dock = DockStyle.Fill };
@@ -91,15 +114,50 @@ public class SessionForm : Form {
         var sysMenu = GetSystemMenu(Handle, false);
         AppendMenu(sysMenu, MF_SEPARATOR, 0, string.Empty);
         AppendMenu(sysMenu, MF_STRING, SC_FULLSCREEN, "Full Screen\tCtrl+Alt+Break");
+        AppendMenu(sysMenu, MF_STRING, SC_TAKE_SCREENSHOT, "Take Screenshot\tCtrl+Shift+P");
         AppendMenu(sysMenu, MF_STRING, SC_TYPE_PASSWORD, "Type Password");
         AppendMenu(sysMenu, MF_STRING, SC_DISCONNECT, "Disconnect");
     }
 
+    private IntPtr KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam) {
+        if (nCode >= 0 && (int)wParam == WM_KEYDOWN_HOOK) {
+            // Only trigger if this form is the foreground window
+            if (GetForegroundWindow() == Handle) {
+                int vkCode = Marshal.ReadInt32(lParam);
+                // Check for Ctrl+Shift+P
+                if (vkCode == VK_P && (GetKeyState(0x11) & 0x8000) != 0 && (GetKeyState(0x10) & 0x8000) != 0) {
+                    TakeScreenshot();
+                    return (IntPtr)1; // Return 1 to prevent further processing
+                }
+            }
+        }
+        return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
+    }
+
+    private void SetupKeyboardHook() {
+        _keyboardProc = KeyboardHookProc;
+        using (var curProcess = System.Diagnostics.Process.GetCurrentProcess())
+        using (var curModule = curProcess.MainModule) {
+            _keyboardHookId = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardProc, GetModuleHandle(curModule.ModuleName), 0);
+        }
+    }
+
+    private void RemoveKeyboardHook() {
+        if (_keyboardHookId != IntPtr.Zero) {
+            UnhookWindowsHookEx(_keyboardHookId);
+            _keyboardHookId = IntPtr.Zero;
+        }
+    }
+
     protected override void WndProc(ref Message m) {
         if (m.Msg == WM_SYSCOMMAND) {
-            int cmd = (int)(m.WParam.ToInt64() & 0xFFF0);
-            if (cmd == SC_FULLSCREEN) {
+            int cmd = (int)(m.WParam.ToInt64());
+            if ((cmd & 0xFFF0) == SC_FULLSCREEN) {
                 if (_isFullScreen) ExitFullScreen(); else EnterFullScreen();
+                return;
+            }
+            if (cmd == SC_TAKE_SCREENSHOT) {
+                TakeScreenshot();
                 return;
             }
             if (cmd == SC_TYPE_PASSWORD) {
@@ -110,11 +168,11 @@ public class SessionForm : Form {
                 Close();
                 return;
             }
-            if (cmd == SC_MINIMIZE_WIN && _isFullScreen) {
+            if ((cmd & 0xFFF0) == SC_MINIMIZE_WIN && _isFullScreen) {
                 WindowState = FormWindowState.Minimized;
                 return;
             }
-            if (cmd == SC_RESTORE_WIN && _isFullScreen) {
+            if ((cmd & 0xFFF0) == SC_RESTORE_WIN && _isFullScreen) {
                 ExitFullScreen();
                 return;
             }
@@ -124,6 +182,7 @@ public class SessionForm : Form {
 
     private void SessionForm_Load(object? sender, EventArgs e) {
         try {
+            SetupKeyboardHook();
             ShowConnectionProgress();
             ConfigureClient();
             _rdpClient.Connect();
@@ -374,6 +433,7 @@ public class SessionForm : Form {
     }
 
     private void SessionForm_FormClosing(object? sender, FormClosingEventArgs e) {
+        RemoveKeyboardHook();
         _resizeTimer.Stop();
         _disconnectTimer.Stop();
         _connectionProgressTimer?.Stop();
@@ -554,6 +614,72 @@ public class SessionForm : Form {
             _progressForm.Close();
             _progressForm.Dispose();
             _progressForm = null;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindowDC(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+    [DllImport("gdi32.dll")]
+    private static extern bool BitBlt(IntPtr hdc, int x, int y, int cx, int cy, IntPtr hdcSrc, int x1, int y1, uint rop);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteDC(IntPtr hdc);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int cx, int cy);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr hObject);
+    private const uint SRCCOPY = 0x00CC0020;
+
+    private void TakeScreenshot() {
+        try {
+            if (_rdpClient.Connected == 0) {
+                MessageBox.Show("RDP session is not connected.", "Screenshot",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var settings = UserSettings.Load();
+            var screenshotPath = settings.ScreenshotPath;
+
+            // Create directory if it doesn't exist
+            if (!Directory.Exists(screenshotPath)) {
+                Directory.CreateDirectory(screenshotPath);
+            }
+
+            // Capture the RDP client control using BitBlt (works with ActiveX controls)
+            IntPtr srcDC = GetWindowDC(_rdpClient.Handle);
+            IntPtr memDC = CreateCompatibleDC(srcDC);
+            IntPtr hBitmap = CreateCompatibleBitmap(srcDC, _rdpClient.Width, _rdpClient.Height);
+            IntPtr hOldBitmap = SelectObject(memDC, hBitmap);
+
+            BitBlt(memDC, 0, 0, _rdpClient.Width, _rdpClient.Height, srcDC, 0, 0, SRCCOPY);
+
+            SelectObject(memDC, hOldBitmap);
+            Bitmap bitmap = Image.FromHbitmap(hBitmap);
+
+            DeleteObject(hBitmap);
+            DeleteDC(memDC);
+            ReleaseDC(_rdpClient.Handle, srcDC);
+
+            // Generate filename with timestamp
+            var rdpFileName = Path.GetFileNameWithoutExtension(_rdpFile.FileName);
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-fff");
+            var filename = Path.Combine(screenshotPath, $"{rdpFileName}_{timestamp}.png");
+
+            // Save the screenshot
+            bitmap.Save(filename, System.Drawing.Imaging.ImageFormat.Png);
+            bitmap.Dispose();
+
+            MessageBox.Show($"Screenshot saved successfully.\n\nLocation: {filename}",
+                "Screenshot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        } catch (Exception ex) {
+            MessageBox.Show($"Failed to save screenshot:\n{ex.Message}",
+                "Screenshot Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

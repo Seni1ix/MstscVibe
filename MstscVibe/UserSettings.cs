@@ -22,6 +22,7 @@ public class UserSettings {
     public bool RedirectPrinters { get; set; }
     public bool RedirectDrives { get; set; }
     public bool RedirectSmartCards { get; set; }
+    public string ScreenshotPath { get; set; } = GetDefaultScreenshotPath();
 
     public static UserSettings Load() {
         try {
@@ -68,6 +69,12 @@ public class UserSettings {
         RedirectPrinters = rdp.RedirectPrinters;
         RedirectDrives = rdp.RedirectDrives;
         RedirectSmartCards = rdp.RedirectSmartCards;
+    }
+
+    private static string GetDefaultScreenshotPath() {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            "MstscVibe");
     }
 
     public string GetPassword() {
