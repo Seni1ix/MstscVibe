@@ -1,7 +1,8 @@
 {
   "profiles": {
     "MstscVibe": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\glundal.marlink\\AppData\\Local\\Temp\\\\KUAS-Palantir-TURTLETEST-0xbd - TurtleTest.rdp\" /v:2.2.32.250"
     }
   }
 }

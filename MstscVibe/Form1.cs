@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace MstscVibe {
 	public partial class Form1 : Form {
 		private RdpFile? _loadedRdp;
@@ -12,7 +14,9 @@ namespace MstscVibe {
 		public Form1(RdpFile rdpFile) : this() {
 			_loadedRdp = rdpFile;
 			ApplyRdpFile(rdpFile);
-		}
+
+			Text = $"MstscVibe - {Assembly.GetExecutingAssembly().GetName().Version}";
+        }
 
 		private void ApplySettings() {
 			txtComputer.Text = _settings.LastComputer;

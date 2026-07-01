@@ -40,7 +40,7 @@ public class SessionForm : Form {
     public SessionForm(RdpFile rdpFile) {
         _rdpFile = rdpFile;
 
-        Text = $"MstscVibe - {rdpFile.FullAddress}";
+        Text = $"MstscVibe - {rdpFile.FileName} - {rdpFile.FullAddress}";
         StartPosition = FormStartPosition.CenterScreen;
 
         _rdpClient = new RdpClientHost { Dock = DockStyle.Fill };
@@ -51,6 +51,11 @@ public class SessionForm : Form {
         };
         _rdpClient.RequestLeaveFullScreen += (s, e) => {
             if (_isFullScreen) ExitFullScreen();
+        };
+        _rdpClient.Disconnected += (s, reason) => {
+            _disconnectTimer.Stop();
+            ShowDisconnectReason(reason);
+            Close();
         };
 
         if (!string.IsNullOrEmpty(rdpFile.Password)) {
@@ -330,6 +335,7 @@ public class SessionForm : Form {
                 byte virtualKey = (byte)(vk & 0xFF);
                 byte shiftState = (byte)((vk >> 8) & 0xFF);
                 uint scanCode = MapVirtualKeyW(virtualKey, 0);
+                if (scanCode == 0) continue;  // Skip characters without valid scan codes
 
                 bool needShift = (shiftState & 1) != 0;
                 bool needCtrl = (shiftState & 2) != 0;
@@ -379,5 +385,47 @@ public class SessionForm : Form {
         if (idx > 0 && int.TryParse(fullAddress[(idx + 1)..], out var port))
             return port;
         return 3389;
+    }
+
+    private static string GetDisconnectReasonText(int reason) => reason switch {
+        0 => "Local disconnect requested",
+        1 => "Remote disconnect requested",
+        2 => "Session ended",
+        3 => "Invalid license/evaluation period",
+        4 => "Insufficient client license",
+        5 => "Client license expired",
+        6 => "Replace license",
+        7 => "Host not found",
+        8 => "Out of memory",
+        9 => "Connection refused",
+        10 => "Logon failed",
+        11 => "Logon failure",
+        16 => "Idle timeout",
+        17 => "Logon timeout",
+        18 => "Disconnect by other instance",
+        19 => "Out of memory (server)",
+        20 => "Server denied connection",
+        256 => "DNS lookup failed",
+        257 => "Socket connection failed",
+        258 => "Client protocol error",
+        259 => "RDP protocol component error",
+        260 => "Channel connection error",
+        261 => "Decryption error",
+        262 => "Encryption error",
+        263 => "Decompression error",
+        264 => "General protocol error",
+        _ => $"Unknown reason (code {reason})"
+    };
+
+    private void ShowDisconnectReason(int reason) {
+        if(reason == 7943) return;
+
+        string reasonText = GetDisconnectReasonText(reason);
+        MessageBox.Show(
+            $"RDP session disconnected.\n\nReason: {reasonText}",
+            "Disconnected",
+            MessageBoxButtons.OK,
+            reason < 10 ? MessageBoxIcon.Information : MessageBoxIcon.Warning
+        );
     }
 }

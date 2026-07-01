@@ -12,6 +12,7 @@ public class RdpClientHost : AxHost {
 
     public event EventHandler? RequestMinimize;
     public event EventHandler? RequestLeaveFullScreen;
+    public event EventHandler<int>? Disconnected;
 
     private AxHost.ConnectionPointCookie? _sinkCookie;
     private RdpEventSink? _sink;
@@ -51,11 +52,20 @@ public class RdpClientHost : AxHost {
     }
 
     public void SendKeys(int numKeys, bool[] keyUp, int[] scanCodes) {
+        const int MAX_KEYS = 256; // Adjust based on testing/documentation
+
+        if(numKeys > MAX_KEYS)
+            throw new ArgumentException($"Maximum {MAX_KEYS} keys per call", nameof(numKeys));
+
+        if(keyUp.Length != numKeys || scanCodes.Length != numKeys)
+            throw new ArgumentException("Array lengths must match numKeys");
+
         var ocx = GetOcx();
-        if (ocx == null) return;
+        if(ocx == null) return;
+
         var nonScriptable = (IMsRdpClientNonScriptable)ocx;
-        if(nonScriptable == null) 
-            return;
+        if(nonScriptable == null) return;
+
         nonScriptable.SendKeys(numKeys, keyUp, scanCodes);
     }
 
@@ -92,6 +102,7 @@ public class RdpClientHost : AxHost {
 
     internal void FireRequestMinimize() => RequestMinimize?.Invoke(this, EventArgs.Empty);
     internal void FireRequestLeaveFullScreen() => RequestLeaveFullScreen?.Invoke(this, EventArgs.Empty);
+    internal void FireDisconnected(int reason) => Disconnected?.Invoke(this, reason);
 
     // The source event interface for the RDP ActiveX control
     [ComImport, Guid("336D5562-EFA8-482E-8CB3-C5C0FC7A7DB6"), InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
@@ -138,7 +149,7 @@ public class RdpClientHost : AxHost {
         public void OnConnecting() { }
         public void OnConnected() { }
         public void OnLoginComplete() { }
-        public void OnDisconnected(int discReason) { }
+        public void OnDisconnected(int discReason) => _host.FireDisconnected(discReason);
         public void OnEnterFullScreenMode() { }
         public void OnLeaveFullScreenMode() { }
         public void OnChannelReceivedData(string chanName, string data) { }

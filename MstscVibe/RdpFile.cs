@@ -4,6 +4,8 @@ using System.Text;
 namespace MstscVibe;
 
 public class RdpFile {
+
+    public string FileName { get; set; } = "";
     public string FullAddress { get; set; } = "";
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
@@ -32,6 +34,9 @@ public class RdpFile {
 
     public static RdpFile Parse(string filePath) {
         var rdp = new RdpFile();
+
+        rdp.FileName = Path.GetFileName(filePath);
+
         foreach (var line in File.ReadAllLines(filePath)) {
             var trimmed = line.Trim();
             if (string.IsNullOrEmpty(trimmed)) continue;
