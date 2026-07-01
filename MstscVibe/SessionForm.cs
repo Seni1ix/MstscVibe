@@ -387,24 +387,46 @@ public class SessionForm : Form {
         return 3389;
     }
 
+    //https://learn.microsoft.com/en-us/windows/win32/termserv/imstscaxevents-ondisconnected
     private static string GetDisconnectReasonText(int reason) => reason switch {
+        // User-initiated disconnects
         0 => "Local disconnect requested",
         1 => "Remote disconnect requested",
         2 => "Session ended",
+
+        // License-related errors
         3 => "Invalid license/evaluation period",
         4 => "Insufficient client license",
         5 => "Client license expired",
         6 => "Replace license",
+
+        // Connection errors
         7 => "Host not found",
         8 => "Out of memory",
         9 => "Connection refused",
         10 => "Logon failed",
         11 => "Logon failure",
+        12 => "Wrong password",
+        13 => "Access denied",
+        14 => "Unknown error",
+        15 => "Unsupported version",
         16 => "Idle timeout",
         17 => "Logon timeout",
         18 => "Disconnect by other instance",
         19 => "Out of memory (server)",
         20 => "Server denied connection",
+        21 => "Callback disconnect",
+        22 => "Account disabled",
+        23 => "Account expired",
+        24 => "Account locked out",
+        25 => "Account restricted",
+        26 => "Session collision",
+        27 => "License quota exceeded",
+        28 => "Account expired - must change password",
+        29 => "Unsupported encryption level",
+        30 => "Account locked - multiple failed logon attempts",
+
+        // Protocol errors (256+)
         256 => "DNS lookup failed",
         257 => "Socket connection failed",
         258 => "Client protocol error",
@@ -414,6 +436,24 @@ public class SessionForm : Form {
         262 => "Encryption error",
         263 => "Decompression error",
         264 => "General protocol error",
+        265 => "Winsock error",
+        266 => "Timeout error",
+        267 => "SSL/TLS error",
+
+        // Connection broker/load balancing
+        500 => "Connection broker redirect",
+        501 => "License server unavailable",
+        502 => "VM redirect",
+
+        // Server-side errors
+        1000 => "Server error - resources unavailable",
+        1001 => "Server error - session limit exceeded",
+        1002 => "Server error - administrator disconnect",
+        1003 => "Server error - user session limit exceeded",
+
+        // Unknown high-value codes (like 7943 - often internal/undocumented)
+        7943 => "Unknown internal error",
+
         _ => $"Unknown reason (code {reason})"
     };
 
@@ -421,8 +461,9 @@ public class SessionForm : Form {
         if(reason == 7943) return;
 
         string reasonText = GetDisconnectReasonText(reason);
+        string hexCode = $"0x{reason:X}";
         MessageBox.Show(
-            $"RDP session disconnected.\n\nReason: {reasonText}",
+            $"RDP session disconnected.\n\nReason: {reasonText}\nCode: {reason} ({hexCode})",
             "Disconnected",
             MessageBoxButtons.OK,
             reason < 10 ? MessageBoxIcon.Information : MessageBoxIcon.Warning
