@@ -16,6 +16,8 @@ public class SessionForm : Form {
     private const int SC_RESTORE_WIN = 0xF120;
     private const int SC_TAKE_SCREENSHOT = 0xF131;
     private const int VK_P = 0x50;
+    private const int VK_F12 = 0x7B;
+    private const int VK_S = 0x53;  // S key for screenshot
 
     [DllImport("user32.dll")]
     private static extern short VkKeyScanW(char ch);
@@ -38,10 +40,10 @@ public class SessionForm : Form {
     private static extern bool UnhookWindowsHookEx(IntPtr hhk);
     [DllImport("user32.dll")]
     private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetModuleHandle(string lpModuleName);
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hWnd);
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
     private IntPtr _keyboardHookId = IntPtr.Zero;
@@ -121,11 +123,19 @@ public class SessionForm : Form {
 
     private IntPtr KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam) {
         if (nCode >= 0 && (int)wParam == WM_KEYDOWN_HOOK) {
-            // Only trigger if this form is the foreground window
-            if (GetForegroundWindow() == Handle) {
-                int vkCode = Marshal.ReadInt32(lParam);
-                // Check for Ctrl+Shift+P
-                if (vkCode == VK_P && (GetKeyState(0x11) & 0x8000) != 0 && (GetKeyState(0x10) & 0x8000) != 0) {
+            int vkCode = Marshal.ReadInt32(lParam);
+
+            // Check for Ctrl+Shift+P
+            if (vkCode == VK_P) {
+                bool ctrlPressed = (GetKeyState(0x11) & 0x8000) != 0;
+                bool shiftPressed = (GetKeyState(0x10) & 0x8000) != 0;
+                bool formActive = Form.ActiveForm == this;
+
+                // Also check if the foreground window is our form or a child of our form (for fullscreen)
+                IntPtr fgWindow = GetForegroundWindow();
+                bool fgWindowIsOurs = fgWindow == Handle || (IsWindow(Handle) && IsWindow(fgWindow));
+
+                if (ctrlPressed && shiftPressed && (formActive || (_isFullScreen && fgWindowIsOurs))) {
                     TakeScreenshot();
                     return (IntPtr)1; // Return 1 to prevent further processing
                 }
@@ -136,10 +146,9 @@ public class SessionForm : Form {
 
     private void SetupKeyboardHook() {
         _keyboardProc = KeyboardHookProc;
-        using (var curProcess = System.Diagnostics.Process.GetCurrentProcess())
-        using (var curModule = curProcess.MainModule) {
-            _keyboardHookId = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardProc, GetModuleHandle(curModule.ModuleName), 0);
-        }
+        // Use global low-level keyboard hook (WH_KEYBOARD_LL = 13)
+        // This works at the system level, before the RDP control consumes events
+        _keyboardHookId = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardProc, IntPtr.Zero, 0);
     }
 
     private void RemoveKeyboardHook() {
@@ -560,6 +569,7 @@ public class SessionForm : Form {
 
     private void ShowDisconnectReason(int reason) {
         if(reason == 7943) return;
+        if(reason == 1) return;
 
         string reasonText = GetDisconnectReasonText(reason);
         string hexCode = $"0x{reason:X}";

@@ -117,7 +117,7 @@ public class ConnectionProgressForm : Form {
     }
 
     protected override void OnClosing(CancelEventArgs e) {
-        System.Threading.Thread.Sleep(2000); // Wait for 3 seconds before closing to ensure the user sees the final status
+        System.Threading.Thread.Sleep(1500); // Wait for 1.5 seconds before closing to ensure the user sees the final status
         _progressBar?.Dispose();
         _statusLabel?.Dispose();
         _titleLabel?.Dispose();
