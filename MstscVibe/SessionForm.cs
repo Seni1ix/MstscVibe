@@ -36,6 +36,8 @@ public class SessionForm : Form {
     private FormBorderStyle _savedBorderStyle;
     private FormWindowState _savedWindowState;
     private Size _savedClientSize;
+    private ConnectionProgressForm? _progressForm;
+    private System.Windows.Forms.Timer? _connectionProgressTimer;
 
     public SessionForm(RdpFile rdpFile) {
         _rdpFile = rdpFile;
@@ -122,12 +124,15 @@ public class SessionForm : Form {
 
     private void SessionForm_Load(object? sender, EventArgs e) {
         try {
+            ShowConnectionProgress();
             ConfigureClient();
             _rdpClient.Connect();
             _rdpClient.SmartSizing = true;
             _lastClientSize = _rdpClient.Size;
             _disconnectTimer.Start();
+            UpdateProgress(80, "Connected, waiting for session...");
         } catch (Exception ex) {
+            CloseProgressForm();
             MessageBox.Show($"Failed to start RDP connection:\n{ex.Message}", "Connection Error",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
@@ -221,8 +226,14 @@ public class SessionForm : Form {
         try {
             if (_rdpClient.Connected == 0) {
                 _disconnectTimer.Stop();
+                CloseProgressForm();
                 Close();
                 return;
+            }
+
+            // Close progress form once fully connected
+            if (_progressForm != null && _rdpClient.Connected != 0) {
+                CloseProgressForm();
             }
 
             // Detect when the native connection bar's restore button exits fullscreen
@@ -231,6 +242,7 @@ public class SessionForm : Form {
             }
         } catch {
             _disconnectTimer.Stop();
+            CloseProgressForm();
             Close();
         }
     }
@@ -364,6 +376,8 @@ public class SessionForm : Form {
     private void SessionForm_FormClosing(object? sender, FormClosingEventArgs e) {
         _resizeTimer.Stop();
         _disconnectTimer.Stop();
+        _connectionProgressTimer?.Stop();
+        CloseProgressForm();
         _securePassword?.Dispose();
         try {
             if (_rdpClient.Connected != 0)
@@ -389,18 +403,16 @@ public class SessionForm : Form {
 
     //https://learn.microsoft.com/en-us/windows/win32/termserv/imstscaxevents-ondisconnected
     private static string GetDisconnectReasonText(int reason) => reason switch {
-        // User-initiated disconnects
-        0 => "Local disconnect requested",
-        1 => "Remote disconnect requested",
-        2 => "Session ended",
+        // Standard disconnect codes (0-3)
+        0 => "No information available",
+        1 => "Local disconnection",
+        2 => "Remote disconnection by user",
+        3 => "Remote disconnection by server",
 
-        // License-related errors
-        3 => "Invalid license/evaluation period",
+        // Legacy codes (4-30) - kept for backward compatibility
         4 => "Insufficient client license",
         5 => "Client license expired",
         6 => "Replace license",
-
-        // Connection errors
         7 => "Host not found",
         8 => "Out of memory",
         9 => "Connection refused",
@@ -426,34 +438,63 @@ public class SessionForm : Form {
         29 => "Unsupported encryption level",
         30 => "Account locked - multiple failed logon attempts",
 
-        // Protocol errors (256+)
-        256 => "DNS lookup failed",
-        257 => "Socket connection failed",
-        258 => "Client protocol error",
-        259 => "RDP protocol component error",
-        260 => "Channel connection error",
-        261 => "Decryption error",
-        262 => "Encryption error",
-        263 => "Decompression error",
-        264 => "General protocol error",
-        265 => "Winsock error",
-        266 => "Timeout error",
-        267 => "SSL/TLS error",
+        // Win32 socket errors
+        53 => "Network path not found",
 
-        // Connection broker/load balancing
-        500 => "Connection broker redirect",
-        501 => "License server unavailable",
-        502 => "VM redirect",
+        // Winsock/Network errors (256+)
+        260 => "DNS name lookup failure",
+        261 => "TCP connect failed",
+        262 => "Out of memory",
+        263 => "Logon failed",
+        264 => "Connection timed out",
+        516 => "Windows Sockets connect failed",
+        518 => "Out of memory",
+        520 => "Host not found error",
+        772 => "Windows Sockets send call failed",
+        774 => "Out of memory",
+        776 => "The IP address specified is not valid",
+        1028 => "Windows Sockets recv call failed",
 
-        // Server-side errors
-        1000 => "Server error - resources unavailable",
-        1001 => "Server error - session limit exceeded",
-        1002 => "Server error - administrator disconnect",
-        1003 => "Server error - user session limit exceeded",
+        // Security/Encryption errors
+        1030 => "Security data is not valid",
+        1032 => "Internal error",
+        1286 => "The encryption method specified is not valid",
+        1288 => "DNS lookup failed",
+        1540 => "Windows Sockets gethostbyname call failed",
+        1542 => "Server security data is not valid",
+        1544 => "Internal timer error",
+        1796 => "Time-out occurred",
+        1798 => "Failed to unpack server certificate",
+        2052 => "Bad IP address specified",
 
-        // Unknown high-value codes (like 7943 - often internal/undocumented)
-        7943 => "Unknown internal error",
+        // SSL/TLS Authentication errors
+        2055 => "Login failed",
+        2056 => "License negotiation failed",
+        2308 => "Socket closed",
+        2310 => "Internal security error",
+        2312 => "Licensing time-out",
+        2566 => "Internal security error",
+        2567 => "The specified user has no account",
+        2822 => "Encryption error",
+        2823 => "The account is disabled",
 
+        // Advanced security errors
+        3078 => "Decryption error",
+        3079 => "The account is restricted",
+        3080 => "Decompression error",
+        3335 => "The account is locked out",
+        3591 => "The account is expired",
+        3847 => "The password is expired",
+        4615 => "The user password must be changed before logging on for the first time",
+        5639 => "The policy does not support delegation of credentials to the target server",
+        5895 => "Delegation of credentials to the target server is not allowed unless mutual authentication has been achieved",
+        6151 => "No authority could be contacted for authentication. The domain name of the authenticating party could be wrong, the domain could be unreachable, or there might have been a trust relationship failure",
+        6919 => "The received certificate is expired",
+        7175 => "An incorrect PIN was presented to the smart card",
+        8455 => "The server authentication policy does not allow connection requests using saved credentials. The user must enter new credentials",
+        8711 => "The smart card is blocked",
+
+        // Unknown codes
         _ => $"Unknown reason (code {reason})"
     };
 
@@ -468,5 +509,51 @@ public class SessionForm : Form {
             MessageBoxButtons.OK,
             reason < 10 ? MessageBoxIcon.Information : MessageBoxIcon.Warning
         );
+    }
+
+    private void ShowConnectionProgress() {
+        _progressForm = new ConnectionProgressForm(ParseHost(_rdpFile.FullAddress)) {
+            Owner = this
+        };
+        _progressForm.Show();
+        _progressForm.Refresh();
+
+        _connectionProgressTimer = new System.Windows.Forms.Timer { Interval = 500 };
+        _connectionProgressTimer.Tick += ConnectionProgressTimer_Tick;
+        _connectionProgressTimer.Start();
+    }
+
+    private void ConnectionProgressTimer_Tick(object? sender, EventArgs e) {
+        if (_progressForm == null || _progressForm.IsDisposed)
+            return;
+
+        if (_rdpClient.Connected != 0) {
+            _connectionProgressTimer?.Stop();
+            CloseProgressForm();
+        } else {
+            UpdateProgress(50, "Establishing connection...");
+        }
+    }
+
+    private void UpdateProgress(int percentage, string status) {
+        if (_progressForm != null && !_progressForm.IsDisposed) {
+            _progressForm.SetDeterminateProgress(percentage);
+            _progressForm.Status = status;
+            _progressForm.Refresh();
+        }
+    }
+
+    private void CloseProgressForm() {
+        if (_connectionProgressTimer != null) {
+            _connectionProgressTimer.Stop();
+            _connectionProgressTimer.Dispose();
+            _connectionProgressTimer = null;
+        }
+
+        if (_progressForm != null && !_progressForm.IsDisposed) {
+            _progressForm.Close();
+            _progressForm.Dispose();
+            _progressForm = null;
+        }
     }
 }
