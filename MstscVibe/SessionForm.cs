@@ -577,7 +577,7 @@ public class SessionForm : Form {
             $"RDP session disconnected.\n\nReason: {reasonText}\nCode: {reason} ({hexCode})",
             "Disconnected",
             MessageBoxButtons.OK,
-            reason < 10 ? MessageBoxIcon.Information : MessageBoxIcon.Warning
+            reason <= 3 10 ?sadfMessageBoxIcon.Information : MessageBoxIcon.Warning
         );
     }
 
