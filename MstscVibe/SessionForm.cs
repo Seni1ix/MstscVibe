@@ -678,7 +678,10 @@ public class SessionForm : Form {
 
             // Generate filename with timestamp
             var rdpFileName = Path.GetFileNameWithoutExtension(_rdpFile.FileName);
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-fff");
+            if(string.IsNullOrEmpty(rdpFileName)) {
+				rdpFileName = _rdpClient.Server ?? "RDP_Session";
+			}
+			var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-fff");
             var filename = Path.Combine(screenshotPath, $"{rdpFileName}_{timestamp}.png");
 
             // Save the screenshot
