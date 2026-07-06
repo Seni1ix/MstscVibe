@@ -88,7 +88,9 @@ public class RdpClientHost : AxHost {
     protected override void CreateSink() {
         try {
             _sink = new RdpEventSink(this);
-            _sinkCookie = new ConnectionPointCookie(GetOcx(), _sink, typeof(IMsTscAxEvents));
+			Object? ocx = GetOcx();
+            if(ocx == null) return;
+			_sinkCookie = new ConnectionPointCookie(ocx, _sink, typeof(IMsTscAxEvents));
         } catch { }
     }
 

@@ -3,10 +3,10 @@ using System.ComponentModel;
 namespace MstscVibe;
 
 public class ConnectionProgressForm : Form {
-    private Label _statusLabel;
-    private ProgressBar _progressBar;
-    private Label _titleLabel;
-    private Panel _contentPanel;
+    private Label _statusLabel = null!;
+    private ProgressBar _progressBar = null!;
+    private Label _titleLabel = null!;
+    private Panel _contentPanel = null!;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Status {
@@ -116,12 +116,12 @@ public class ConnectionProgressForm : Form {
         }
     }
 
-    protected override void OnClosing(CancelEventArgs e) {
-        System.Threading.Thread.Sleep(1500); // Wait for 1.5 seconds before closing to ensure the user sees the final status
-        _progressBar?.Dispose();
-        _statusLabel?.Dispose();
-        _titleLabel?.Dispose();
-        _contentPanel?.Dispose();
-        base.OnClosing(e);
-    }
+	protected override void OnFormClosing(FormClosingEventArgs e) {
+		System.Threading.Thread.Sleep(1500); // Wait for 1.5 seconds before closing to ensure the user sees the final status
+		_progressBar?.Dispose();
+		_statusLabel?.Dispose();
+		_titleLabel?.Dispose();
+		_contentPanel?.Dispose();
+		base.OnFormClosing(e);
+	}
 }

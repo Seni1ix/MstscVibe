@@ -80,7 +80,7 @@ public class SessionForm : Form {
             if (_isFullScreen) ExitFullScreen();
         };
         _rdpClient.Disconnected += (s, reason) => {
-            _disconnectTimer.Stop();
+            _disconnectTimer?.Stop();
             ShowDisconnectReason(reason);
             Close();
         };
@@ -258,8 +258,8 @@ public class SessionForm : Form {
 
         // Public mode — disable persistent bitmap caching and auto-reconnect
         if (_rdpFile.PublicMode && adv != null) {
-            adv.BitmapPersistence = 0;
-            adv.EnableAutoReconnect = false;
+            adv?.BitmapPersistence = 0;
+            adv?.EnableAutoReconnect = false;
         }
 
         // Multi-monitor
@@ -577,7 +577,7 @@ public class SessionForm : Form {
             $"RDP session disconnected.\n\nReason: {reasonText}\nCode: {reason} ({hexCode})",
             "Disconnected",
             MessageBoxButtons.OK,
-            reason <= 3 10 ?sadfMessageBoxIcon.Information : MessageBoxIcon.Warning
+            reason <= 3 ? MessageBoxIcon.Information : MessageBoxIcon.Warning
         );
     }
 
