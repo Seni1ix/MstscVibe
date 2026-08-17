@@ -224,11 +224,8 @@ public class SessionForm : Form {
         if (!string.IsNullOrWhiteSpace(_rdpFile.Username))
             _rdpClient.UserName = _rdpFile.Username;
 
-        if (!string.IsNullOrEmpty(_rdpFile.Password)) {
-            var adv2 = _rdpClient.AdvancedSettings;
-            if (adv2 != null)
-                adv2.ClearTextPassword = _rdpFile.Password;
-        }
+        if (!string.IsNullOrEmpty(_rdpFile.Password))
+            _rdpClient.SetPassword(_rdpFile.Password);
 
         _rdpClient.DesktopWidth = _rdpFile.DesktopWidth;
         _rdpClient.DesktopHeight = _rdpFile.DesktopHeight;
@@ -406,35 +403,49 @@ public class SessionForm : Form {
         var ptr = Marshal.SecureStringToGlobalAllocUnicode(_securePassword);
         try {
             var password = Marshal.PtrToStringUni(ptr) ?? string.Empty;
-            var keyUpList = new List<bool>();
-            var scanCodeList = new List<int>();
 
             foreach (char c in password) {
                 short vk = VkKeyScanW(c);
                 if (vk == -1) continue;
+
                 byte virtualKey = (byte)(vk & 0xFF);
                 byte shiftState = (byte)((vk >> 8) & 0xFF);
                 uint scanCode = MapVirtualKeyW(virtualKey, 0);
-                if (scanCode == 0) continue;  // Skip characters without valid scan codes
+                if (scanCode == 0) continue;
 
                 bool needShift = (shiftState & 1) != 0;
                 bool needCtrl = (shiftState & 2) != 0;
                 bool needAlt = (shiftState & 4) != 0;
 
+                var keyUpList = new List<bool>();
+                var scanCodeList = new List<int>();
+
+                // Press modifier keys
                 if (needShift) { keyUpList.Add(false); scanCodeList.Add(0x2A); }
                 if (needCtrl) { keyUpList.Add(false); scanCodeList.Add(0x1D); }
                 if (needAlt) { keyUpList.Add(false); scanCodeList.Add(0x38); }
 
+                // Press and release the character key
                 keyUpList.Add(false); scanCodeList.Add((int)scanCode);
                 keyUpList.Add(true); scanCodeList.Add((int)scanCode);
 
+                // Release modifier keys
                 if (needAlt) { keyUpList.Add(true); scanCodeList.Add(0x38); }
                 if (needCtrl) { keyUpList.Add(true); scanCodeList.Add(0x1D); }
                 if (needShift) { keyUpList.Add(true); scanCodeList.Add(0x2A); }
+
+                // Send this character's keystrokes
+                if (keyUpList.Count > 0) {
+                    _rdpClient.SendKeys(keyUpList.Count, keyUpList.ToArray(), scanCodeList.ToArray());
+                    System.Threading.Thread.Sleep(10); // Small delay between characters
+                }
             }
 
-            if (keyUpList.Count > 0) {
-                _rdpClient.SendKeys(keyUpList.Count, keyUpList.ToArray(), scanCodeList.ToArray());
+            // Send Enter key after password
+            const uint VK_RETURN = 0x0D;
+            uint enterScanCode = MapVirtualKeyW(VK_RETURN, 0);
+            if (enterScanCode != 0) {
+                _rdpClient.SendKeys(2, new bool[] { false, true }, new int[] { (int)enterScanCode, (int)enterScanCode });
             }
         } finally {
             Marshal.ZeroFreeGlobalAllocUnicode(ptr);

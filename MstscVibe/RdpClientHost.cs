@@ -42,32 +42,107 @@ public class RdpClientHost : AxHost {
     public void Connect() => Ocx?.Connect();
     public void Disconnect() => Ocx?.Disconnect();
 
-    public void SendScanCode(uint scanCode, bool keyUp) {
-        var ocx = GetOcx();
-        if (ocx == null) return;
-        var nonScriptable = (IMsRdpClientNonScriptable)ocx;
-        if(nonScriptable == null) 
-            return;
-        nonScriptable.SendKeys(1, new bool[] { keyUp }, new int[] { (int)scanCode });
+    public void SetPassword(string password) {
+        try {
+            var ocx = GetOcx();
+            if (ocx == null) return;
+
+            // Use late binding through IDispatch
+            Type type = ocx.GetType();
+            type.InvokeMember("put_ClearTextPassword",
+                System.Reflection.BindingFlags.InvokeMethod,
+                null,
+                ocx,
+                new object[] { password });
+        } catch (Exception ex) {
+            // If late binding fails, try dynamic as fallback
+            try {
+                var adv = Ocx?.AdvancedSettings;
+                if (adv != null) {
+                    adv.ClearTextPassword = password;
+                }
+            } catch {
+                MessageBox.Show($"Error setting password: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
     }
 
-    public void SendKeys(int numKeys, bool[] keyUp, int[] scanCodes) {
-        const int MAX_KEYS = 256; // Adjust based on testing/documentation
+	public void SendScanCode(uint scanCode, bool keyUp) {
+		try {
+			var ocx = GetOcx();
+			if (ocx == null) return;
 
-        if(numKeys > MAX_KEYS)
-            throw new ArgumentException($"Maximum {MAX_KEYS} keys per call", nameof(numKeys));
+			// Try multiple interface versions
+			bool success = false;
 
-        if(keyUp.Length != numKeys || scanCodes.Length != numKeys)
-            throw new ArgumentException("Array lengths must match numKeys");
+			// Try IMsRdpClientNonScriptable5
+			if (ocx is IMsRdpClientNonScriptable5 ns5) {
+				ns5.SendKeys(1, new bool[] { keyUp }, new int[] { (int)scanCode });
+				success = true;
+			}
 
-        var ocx = GetOcx();
-        if(ocx == null) return;
+			// Try IMsRdpClientNonScriptable3
+			if (!success && ocx is IMsRdpClientNonScriptable3 ns3) {
+				ns3.SendKeys(1, new bool[] { keyUp }, new int[] { (int)scanCode });
+				success = true;
+			}
 
-        var nonScriptable = (IMsRdpClientNonScriptable)ocx;
-        if(nonScriptable == null) return;
+			// Try IMsRdpClientNonScriptable
+			if (!success && ocx is IMsRdpClientNonScriptable ns) {
+				ns.SendKeys(1, new bool[] { keyUp }, new int[] { (int)scanCode });
+				success = true;
+			}
 
-        nonScriptable.SendKeys(numKeys, keyUp, scanCodes);
-    }
+			if (!success) {
+				MessageBox.Show("Could not find compatible NonScriptable interface for SendKeys", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+		} catch (Exception ex) {
+			MessageBox.Show($"Error sending scan code: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+		}
+	}
+
+	public void SendKeys(int numKeys, bool[] keyUp, int[] scanCodes) {
+		try {
+			const int MAX_KEYS = 256;
+
+			if(numKeys > MAX_KEYS)
+				throw new ArgumentException($"Maximum {MAX_KEYS} keys per call", nameof(numKeys));
+
+			if(keyUp.Length != numKeys || scanCodes.Length != numKeys)
+				throw new ArgumentException("Array lengths must match numKeys");
+
+			var ocx = GetOcx();
+			if(ocx == null)
+				return;
+
+			bool success = false;
+
+			// Try IMsRdpClientNonScriptable5
+			if (ocx is IMsRdpClientNonScriptable5 ns5) {
+				ns5.SendKeys(numKeys, keyUp, scanCodes);
+				success = true;
+			}
+
+			// Try IMsRdpClientNonScriptable3
+			if (!success && ocx is IMsRdpClientNonScriptable3 ns3) {
+				ns3.SendKeys(numKeys, keyUp, scanCodes);
+				success = true;
+			}
+
+			// Try IMsRdpClientNonScriptable
+			if (!success && ocx is IMsRdpClientNonScriptable ns) {
+				ns.SendKeys(numKeys, keyUp, scanCodes);
+				success = true;
+			}
+
+			if (!success) {
+				MessageBox.Show("Could not find compatible NonScriptable interface for SendKeys", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+		}
+		catch(Exception ex) {
+			MessageBox.Show($"Error sending keys: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+		}
+	}
 
     public void Reconnect(int width, int height) {
         try {
@@ -182,21 +257,66 @@ public class RdpClientHost : AxHost {
         public void OnAutoReconnecting2(int disconnectReason, bool networkAvailable, int attemptCount, int maxAttemptCount) { }
     }
 
+    // COM interfaces for RDP NonScriptable methods
+    // Different versions for compatibility with various RDP client versions
+
     [ComImport, Guid("2F079C4C-87B2-4AFD-97AB-20CDB43038AE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     internal interface IMsRdpClientNonScriptable {
-        // IMsTscNonScriptable methods
         void put_ClearTextPassword([MarshalAs(UnmanagedType.BStr)] string clearTextPassword);
         void put_PortablePassword([MarshalAs(UnmanagedType.BStr)] string portablePassword);
-        void get_PortablePassword([MarshalAs(UnmanagedType.BStr)] out string portablePassword);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_PortablePassword();
         void put_PortableSalt([MarshalAs(UnmanagedType.BStr)] string portableSalt);
-        void get_PortableSalt([MarshalAs(UnmanagedType.BStr)] out string portableSalt);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_PortableSalt();
         void put_BinaryPassword([MarshalAs(UnmanagedType.BStr)] string binaryPassword);
-        void get_BinaryPassword([MarshalAs(UnmanagedType.BStr)] out string binaryPassword);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_BinaryPassword();
         void put_BinarySalt([MarshalAs(UnmanagedType.BStr)] string binarySalt);
-        void get_BinarySalt([MarshalAs(UnmanagedType.BStr)] out string binarySalt);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_BinarySalt();
         void ResetPassword();
-        // IMsRdpClientNonScriptable methods
-        void NotifyRedirectDeviceChange(IntPtr wParam, IntPtr lParam);
+        void NotifyRedirectDeviceChange(uint wParam, uint lParam);
+        void SendKeys(int numKeys, [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.VariantBool)] bool[] pbArrayKeyUp, [MarshalAs(UnmanagedType.LPArray)] int[] plKeyData);
+    }
+
+    [ComImport, Guid("17A5E535-4072-4FA4-AF32-C8D0D47345E9"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IMsRdpClientNonScriptable3 {
+        void put_ClearTextPassword([MarshalAs(UnmanagedType.BStr)] string clearTextPassword);
+        void put_PortablePassword([MarshalAs(UnmanagedType.BStr)] string portablePassword);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_PortablePassword();
+        void put_PortableSalt([MarshalAs(UnmanagedType.BStr)] string portableSalt);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_PortableSalt();
+        void put_BinaryPassword([MarshalAs(UnmanagedType.BStr)] string binaryPassword);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_BinaryPassword();
+        void put_BinarySalt([MarshalAs(UnmanagedType.BStr)] string binarySalt);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_BinarySalt();
+        void ResetPassword();
+        void NotifyRedirectDeviceChange(uint wParam, uint lParam);
+        void SendKeys(int numKeys, [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.VariantBool)] bool[] pbArrayKeyUp, [MarshalAs(UnmanagedType.LPArray)] int[] plKeyData);
+    }
+
+    [ComImport, Guid("4F5BE5A5-5F19-4D52-AE3D-9B64BBAEA9AF"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IMsRdpClientNonScriptable5 {
+        void put_ClearTextPassword([MarshalAs(UnmanagedType.BStr)] string clearTextPassword);
+        void put_PortablePassword([MarshalAs(UnmanagedType.BStr)] string portablePassword);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_PortablePassword();
+        void put_PortableSalt([MarshalAs(UnmanagedType.BStr)] string portableSalt);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_PortableSalt();
+        void put_BinaryPassword([MarshalAs(UnmanagedType.BStr)] string binaryPassword);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_BinaryPassword();
+        void put_BinarySalt([MarshalAs(UnmanagedType.BStr)] string binarySalt);
+        [return: MarshalAs(UnmanagedType.BStr)]
+        string get_BinarySalt();
+        void ResetPassword();
+        void NotifyRedirectDeviceChange(uint wParam, uint lParam);
         void SendKeys(int numKeys, [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.VariantBool)] bool[] pbArrayKeyUp, [MarshalAs(UnmanagedType.LPArray)] int[] plKeyData);
     }
 }
