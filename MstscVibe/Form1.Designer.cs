@@ -76,8 +76,20 @@
 			// txtPassword
 			txtPassword = new TextBox();
 			txtPassword.Location = new Point(120, 89);
-			txtPassword.Size = new Size(220, 23);
+			txtPassword.Size = new Size(194, 23);
 			txtPassword.UseSystemPasswordChar = true;
+
+			// btnRevealPassword (press and hold to show the password)
+			btnRevealPassword = new Button();
+			btnRevealPassword.Location = new Point(316, 89);
+			btnRevealPassword.Size = new Size(24, 23);
+			btnRevealPassword.TabStop = false;
+			btnRevealPassword.FlatStyle = FlatStyle.Flat;
+			btnRevealPassword.FlatAppearance.BorderSize = 0;
+			btnRevealPassword.Cursor = Cursors.Hand;
+			btnRevealPassword.MouseDown += BtnRevealPassword_MouseDown;
+			btnRevealPassword.MouseUp += BtnRevealPassword_MouseUp;
+			btnRevealPassword.MouseCaptureChanged += BtnRevealPassword_MouseCaptureChanged;
 
 			// chkRememberPassword
 			chkRememberPassword = new CheckBox();
@@ -89,7 +101,7 @@
 			grpLogon.Text = "Logon settings";
 			grpLogon.Location = new Point(12, 32);
 			grpLogon.Size = new Size(360, 150);
-			grpLogon.Controls.AddRange([lblComputer, txtComputer, lblUsername, txtUsername, lblPassword, txtPassword, chkRememberPassword]);
+			grpLogon.Controls.AddRange([lblComputer, txtComputer, lblUsername, txtUsername, lblPassword, txtPassword, btnRevealPassword, chkRememberPassword]);
 
 			// btnOptions
 			btnOptions.Text = "Options...";
@@ -127,6 +139,7 @@
 		private GroupBox grpLogon;
 		private Label lblPassword;
 		private TextBox txtPassword;
+		private Button btnRevealPassword;
 		private CheckBox chkRememberPassword;
 		private MenuStrip menuStrip;
 		private ToolStripMenuItem fileMenu;

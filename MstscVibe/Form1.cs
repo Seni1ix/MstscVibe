@@ -7,6 +7,7 @@ namespace MstscVibe {
 
 		public Form1() {
 			InitializeComponent();
+			SetupRevealPasswordButton();
 			_settings = UserSettings.Load();
 			ApplySettings();
             Text = $"MstscVibe - {Assembly.GetExecutingAssembly().GetName().Version}";
@@ -18,6 +19,40 @@ namespace MstscVibe {
 
 			Text = $"MstscVibe - {Assembly.GetExecutingAssembly().GetName().Version}";
         }
+
+		private readonly ToolTip _toolTip = new();
+
+		private void SetupRevealPasswordButton() {
+			// Use the Windows icon font "eye" glyph (Segoe Fluent Icons on Win11, Segoe MDL2 Assets on Win10),
+			// falling back to an emoji if neither font is installed.
+			Font? iconFont = null;
+			foreach (var family in new[] { "Segoe Fluent Icons", "Segoe MDL2 Assets" }) {
+				var f = new Font(family, 9F);
+				if (string.Equals(f.Name, family, StringComparison.OrdinalIgnoreCase)) { iconFont = f; break; }
+				f.Dispose();
+			}
+			if (iconFont != null) {
+				btnRevealPassword.Font = iconFont;
+				btnRevealPassword.Text = ""; // "View" (eye)
+			} else {
+				btnRevealPassword.Text = "\U0001F441"; // 👁
+			}
+			_toolTip.SetToolTip(btnRevealPassword, "Press and hold to show password");
+		}
+
+		private void BtnRevealPassword_MouseDown(object? sender, MouseEventArgs e) {
+			if (e.Button == MouseButtons.Left)
+				txtPassword.UseSystemPasswordChar = false;
+		}
+
+		private void BtnRevealPassword_MouseUp(object? sender, MouseEventArgs e) {
+			txtPassword.UseSystemPasswordChar = true;
+		}
+
+		// Safety net: hide again if mouse capture is lost (e.g. Alt+Tab while holding).
+		private void BtnRevealPassword_MouseCaptureChanged(object? sender, EventArgs e) {
+			txtPassword.UseSystemPasswordChar = true;
+		}
 
 		private void ApplySettings() {
 			txtComputer.Text = _settings.LastComputer;

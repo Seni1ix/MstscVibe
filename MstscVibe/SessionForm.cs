@@ -486,7 +486,7 @@ public class SessionForm : Form {
         // Standard disconnect codes (0-3)
         0 => "No information available",
         1 => "Local disconnection",
-        2 => "Remote disconnection by user",
+        2 => "Remote disconnection by user", // Logoff or disconnect initiated by the remote user
         3 => "Remote disconnection by server",
 
         // Legacy codes (4-30) - kept for backward compatibility
@@ -581,6 +581,7 @@ public class SessionForm : Form {
     private void ShowDisconnectReason(int reason) {
         if(reason == 7943) return;
         if(reason == 1) return;
+        if(reason == 2) return;
 
         string reasonText = GetDisconnectReasonText(reason);
         string hexCode = $"0x{reason:X}";
