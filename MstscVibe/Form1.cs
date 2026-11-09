@@ -54,6 +54,8 @@ namespace MstscVibe {
 			txtPassword.UseSystemPasswordChar = true;
 		}
 
+		private void ExitMenuItem_Click(object? sender, EventArgs e) => Close();
+
 		private void ApplySettings() {
 			txtComputer.Text = _settings.LastComputer;
 			txtUsername.Text = _settings.LastUsername;
